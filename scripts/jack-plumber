@@ -25,7 +25,7 @@ class PortEventType:
 
 class Instruction(object):
 
-    def execute(self, client, port, event):
+    def execute(self, client, port, event, date):
         pass
 
     def __repr__(self):
@@ -36,7 +36,7 @@ class PortRenameInstruction(Instruction):
     def __init__(self, new_port_name):
         self.new_port_name = new_port_name
 
-    def execute(self, client, port, event):
+    def execute(self, client, port, event, date):
         if event in [PortEventType.registered, PortEventType.preexisting]:
             port.set_short_name(self.new_port_name)
 
@@ -46,7 +46,7 @@ class PortConnectInstruction(Instruction):
         self.other_client_pattern = other_client_pattern
         self.other_port_pattern = other_port_pattern
 
-    def execute(self, client, port, event):
+    def execute(self, client, port, event, date):
         if event in [PortEventType.registered, PortEventType.renamed, PortEventType.preexisting]:
             for other_port in [
                     p for p in client.get_ports()
@@ -61,21 +61,22 @@ class PortConnectInstruction(Instruction):
                 except jack.ConnectionExists:
                     pass
 
-def check_port(client, port, event, instructions, rename = True):
+def check_port(client, port, event, instructions):
+    date = datetime.datetime.now()
     log("port '%s' %s" % (port.get_name(), event))
     for client_pattern in instructions:
         if re.match(client_pattern, port.get_client_name()):
             for port_pattern in instructions[client_pattern]:
                 if re.match(port_pattern, port.get_short_name()):
                     for instruction in instructions[client_pattern][port_pattern]:
-                        GLib.idle_add(lambda: instruction.execute(client, port, event))
+                        GLib.idle_add(instruction.execute, client, port, event, date)
 
 def port_registered(client, port, instructions):
     check_port(client, port, PortEventType.registered, instructions)
 
 def port_renamed(client, port, old_name, new_name, instructions):
     """ Avoid recursion by skipping rename instructions. """
-    check_port(client, port, PortEventType.renamed, instructions, rename = False)
+    check_port(client, port, PortEventType.renamed, instructions)
 
 def server_shutdown(client, reason, callback):
     print(reason)
