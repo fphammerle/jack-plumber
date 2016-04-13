@@ -5,10 +5,8 @@ import re
 import jack
 from gi.repository import GLib
 
-loop = GLib.MainLoop()
-
 class Instruction(object):
-    
+
     def execute(self, client, port):
         pass
 
@@ -31,7 +29,7 @@ class PortConnectInstruction(Instruction):
 
     def execute(self, client, port):
         for other_port in [
-                p for p in client.get_ports() 
+                p for p in client.get_ports()
                     if re.match(self.other_client_pattern, p.get_client_name())
                     and re.match(self.other_port_pattern, p.get_short_name())
                 ]:
@@ -40,11 +38,11 @@ class PortConnectInstruction(Instruction):
                     client.connect(port, other_port)
                 else:
                     client.connect(other_port, port)
-            except jack.ConnectionExists: 
+            except jack.ConnectionExists:
                 pass
 
 def check_port(client, port, instructions, rename = True):
-    for client_pattern in instructions: 
+    for client_pattern in instructions:
         if re.match(client_pattern, port.get_client_name()):
             for port_pattern in instructions[client_pattern]:
                 if re.match(port_pattern, port.get_short_name()):
@@ -59,48 +57,51 @@ def port_renamed(client, port, old_name, new_name, instructions):
     """ Avoid recursion by skipping rename instructions. """
     check_port(client, port, instructions, rename = False)
 
-def server_shutdown(client, reason, arg = None):
-    loop = arg
+def server_shutdown(client, reason, callback):
     print(reason)
-    loop.quit()
+    if callback:
+        GLib.idle_add(lambda: callback())
 
-def run(instructions):
-    
+def create_client(instructions, server_shutdown_callback = None):
+
     jack_client = jack.Client('plumber')
     jack_client.set_port_registered_callback(port_registered, instructions)
     jack_client.set_port_renamed_callback(port_renamed, instructions)
-    jack_client.set_shutdown_callback(server_shutdown, loop)
+    if server_shutdown_callback:
+        jack_client.set_shutdown_callback(server_shutdown, server_shutdown_callback)
     jack_client.activate()
 
     for port in jack_client.get_ports():
         check_port(jack_client, port, instructions)
 
-    try:
-        loop.run()
-    except KeyboardInterrupt:
-        pass
+    return jack_client
 
 def _init_argparser():
 
     import argparse
     argparser = argparse.ArgumentParser(description = None)
     argparser.add_argument(
-            '--rename-port', 
+            '--dbus',
+            action='store_true',
+            help = 'wait for jack server to start / restart via jackdbus',
+            )
+    argparser.add_argument(
+            '--rename-port',
             dest = 'port_renaming_instructions',
             action = 'append',
             nargs = 3,
             metavar = ('client_name_pattern', 'port_name_pattern', 'new_port_name'),
             )
     argparser.add_argument(
-            '--connect-ports', 
+            '--connect-ports',
             dest = 'port_connecting_instructions',
             action = 'append',
             nargs = 4,
             metavar = (
-                'client_name_pattern_1', 
-                'port_name_pattern_1', 
-                'client_name_pattern_2', 
-                'port_name_pattern_2', 
+                'client_name_pattern_1',
+                'port_name_pattern_1',
+                'client_name_pattern_2',
+                'port_name_pattern_2',
                 ),
             )
     return argparser
@@ -147,8 +148,45 @@ def main(argv):
                 PortConnectInstruction(client_pattern_1, port_pattern_1),
                 instructions,
                 )
-            
-    run(instructions)
+
+    loop = GLib.MainLoop()
+    loop_attr = {'client': None}
+
+    if args.dbus:
+
+        import dbus
+        from dbus.mainloop.glib import DBusGMainLoop
+        session_bus = dbus.SessionBus(mainloop = DBusGMainLoop())
+        jack_dbus_interface = dbus.Interface(
+            session_bus.get_object(
+                'org.jackaudio.service',
+                '/org/jackaudio/Controller',
+                ),
+            dbus_interface = 'org.jackaudio.JackControl',
+            )
+
+        def shutdown_callback():
+            loop_attr['client'] = None
+            print('shutdown')
+
+        def jack_started():
+            print('detected start')
+            loop_attr['client'] = create_client(instructions, shutdown_callback)
+
+        jack_dbus_interface.connect_to_signal('ServerStarted', jack_started)
+
+        if jack_dbus_interface.IsStarted():
+            loop_attr['client'] = create_client(instructions, shutdown_callback)
+
+    else:
+
+        loop_attr['client'] = create_client(instructions, lambda: loop.quit())
+
+    try:
+        loop.run()
+    except KeyboardInterrupt:
+        print('keyboard interrupt')
+        pass
 
     return 0
 
