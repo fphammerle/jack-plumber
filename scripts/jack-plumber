@@ -1,0 +1,157 @@
+#!/usr/bin/env python
+# PYTHON_ARGCOMPLETE_OK
+
+import re
+import jack
+from gi.repository import GLib
+
+loop = GLib.MainLoop()
+
+class Instruction(object):
+    
+    def execute(self, client, port):
+        pass
+
+    def __repr__(self):
+        return type(self).__name__ + '(' + ', '.join([a + ': ' + repr(getattr(self, a)) for a in vars(self)]) + ')'
+
+class PortRenameInstruction(Instruction):
+
+    def __init__(self, new_port_name):
+        self.new_port_name = new_port_name
+
+    def execute(self, client, port):
+        port.set_short_name(self.new_port_name)
+
+class PortConnectInstruction(Instruction):
+
+    def __init__(self, other_client_pattern, other_port_pattern):
+        self.other_client_pattern = other_client_pattern
+        self.other_port_pattern = other_port_pattern
+
+    def execute(self, client, port):
+        for other_port in [
+                p for p in client.get_ports() 
+                    if re.match(self.other_client_pattern, p.get_client_name())
+                    and re.match(self.other_port_pattern, p.get_short_name())
+                ]:
+            try:
+                if port.is_output():
+                    client.connect(port, other_port)
+                else:
+                    client.connect(other_port, port)
+            except jack.ConnectionExists: 
+                pass
+
+def check_port(client, port, instructions, rename = True):
+    for client_pattern in instructions: 
+        if re.match(client_pattern, port.get_client_name()):
+            for port_pattern in instructions[client_pattern]:
+                if re.match(port_pattern, port.get_short_name()):
+                    for instruction in instructions[client_pattern][port_pattern]:
+                        if rename or not isinstance(instruction, PortRenameInstruction):
+                            GLib.idle_add(lambda: instruction.execute(client, port))
+
+def port_registered(client, port, instructions):
+    check_port(client, port, instructions)
+
+def port_renamed(client, port, old_name, new_name, instructions):
+    """ Avoid recursion by skipping rename instructions. """
+    check_port(client, port, instructions, rename = False)
+
+def server_shutdown(client, reason, arg = None):
+    loop = arg
+    print(reason)
+    loop.quit()
+
+def run(instructions):
+    
+    jack_client = jack.Client('plumber')
+    jack_client.set_port_registered_callback(port_registered, instructions)
+    jack_client.set_port_renamed_callback(port_renamed, instructions)
+    jack_client.set_shutdown_callback(server_shutdown, loop)
+    jack_client.activate()
+
+    for port in jack_client.get_ports():
+        check_port(jack_client, port, instructions)
+
+    try:
+        loop.run()
+    except KeyboardInterrupt:
+        pass
+
+def _init_argparser():
+
+    import argparse
+    argparser = argparse.ArgumentParser(description = None)
+    argparser.add_argument(
+            '--rename-port', 
+            dest = 'port_renaming_instructions',
+            action = 'append',
+            nargs = 3,
+            metavar = ('client_name_pattern', 'port_name_pattern', 'new_port_name'),
+            )
+    argparser.add_argument(
+            '--connect-ports', 
+            dest = 'port_connecting_instructions',
+            action = 'append',
+            nargs = 4,
+            metavar = (
+                'client_name_pattern_1', 
+                'port_name_pattern_1', 
+                'client_name_pattern_2', 
+                'port_name_pattern_2', 
+                ),
+            )
+    return argparser
+
+def register_instruction(client_pattern, port_pattern, instruction, instructions):
+    if not client_pattern in instructions:
+        instructions[client_pattern] = {}
+    if not port_pattern in instructions[client_pattern]:
+        instructions[client_pattern][port_pattern] = []
+    instructions[client_pattern][port_pattern].append(instruction)
+
+def main(argv):
+
+    argparser = _init_argparser()
+    try:
+        import argcomplete
+        argcomplete.autocomplete(argparser)
+    except ImportError:
+        pass
+    args = argparser.parse_args(argv)
+
+    instructions = {}
+    if args.port_renaming_instructions:
+        for renaming_instruction in args.port_renaming_instructions:
+            (client_pattern, port_pattern, new_port_name) = renaming_instruction
+            register_instruction(
+                client_pattern,
+                port_pattern,
+                PortRenameInstruction(new_port_name),
+                instructions,
+                )
+    if args.port_connecting_instructions:
+        for connecting_instruction in args.port_connecting_instructions:
+            (client_pattern_1, port_pattern_1, client_pattern_2, port_pattern_2) = connecting_instruction
+            register_instruction(
+                client_pattern_1,
+                port_pattern_1,
+                PortConnectInstruction(client_pattern_2, port_pattern_2),
+                instructions,
+                )
+            register_instruction(
+                client_pattern_2,
+                port_pattern_2,
+                PortConnectInstruction(client_pattern_1, port_pattern_1),
+                instructions,
+                )
+            
+    run(instructions)
+
+    return 0
+
+if __name__ == "__main__":
+    import sys
+    sys.exit(main(sys.argv[1:]))
