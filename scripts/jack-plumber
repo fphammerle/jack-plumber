@@ -5,9 +5,14 @@ import re
 import jack
 from gi.repository import GLib
 
+class PortEventType:
+    preexisting = 'preexisting'
+    registered = 'registered'
+    renamed = 'renamed'
+
 class Instruction(object):
 
-    def execute(self, client, port):
+    def execute(self, client, port, event):
         pass
 
     def __repr__(self):
@@ -18,8 +23,9 @@ class PortRenameInstruction(Instruction):
     def __init__(self, new_port_name):
         self.new_port_name = new_port_name
 
-    def execute(self, client, port):
-        port.set_short_name(self.new_port_name)
+    def execute(self, client, port, event):
+        if event in [PortEventType.registered, PortEventType.preexisting]:
+            port.set_short_name(self.new_port_name)
 
 class PortConnectInstruction(Instruction):
 
@@ -27,35 +33,35 @@ class PortConnectInstruction(Instruction):
         self.other_client_pattern = other_client_pattern
         self.other_port_pattern = other_port_pattern
 
-    def execute(self, client, port):
-        for other_port in [
-                p for p in client.get_ports()
-                    if re.match(self.other_client_pattern, p.get_client_name())
-                    and re.match(self.other_port_pattern, p.get_short_name())
-                ]:
-            try:
-                if port.is_output():
-                    client.connect(port, other_port)
-                else:
-                    client.connect(other_port, port)
-            except jack.ConnectionExists:
-                pass
+    def execute(self, client, port, event):
+        if event in [PortEventType.registered, PortEventType.renamed, PortEventType.preexisting]:
+            for other_port in [
+                    p for p in client.get_ports()
+                        if re.match(self.other_client_pattern, p.get_client_name())
+                        and re.match(self.other_port_pattern, p.get_short_name())
+                    ]:
+                try:
+                    if port.is_output():
+                        client.connect(port, other_port)
+                    else:
+                        client.connect(other_port, port)
+                except jack.ConnectionExists:
+                    pass
 
-def check_port(client, port, instructions, rename = True):
+def check_port(client, port, event, instructions, rename = True):
     for client_pattern in instructions:
         if re.match(client_pattern, port.get_client_name()):
             for port_pattern in instructions[client_pattern]:
                 if re.match(port_pattern, port.get_short_name()):
                     for instruction in instructions[client_pattern][port_pattern]:
-                        if rename or not isinstance(instruction, PortRenameInstruction):
-                            GLib.idle_add(lambda: instruction.execute(client, port))
+                        GLib.idle_add(lambda: instruction.execute(client, port, event))
 
 def port_registered(client, port, instructions):
-    check_port(client, port, instructions)
+    check_port(client, port, PortEventType.registered, instructions)
 
 def port_renamed(client, port, old_name, new_name, instructions):
     """ Avoid recursion by skipping rename instructions. """
-    check_port(client, port, instructions, rename = False)
+    check_port(client, port, PortEventType.renamed, instructions, rename = False)
 
 def server_shutdown(client, reason, callback):
     print(reason)
@@ -72,7 +78,7 @@ def create_client(instructions, server_shutdown_callback = None):
     jack_client.activate()
 
     for port in jack_client.get_ports():
-        check_port(jack_client, port, instructions)
+        check_port(jack_client, port, PortEventType.preexisting, instructions)
 
     return jack_client
 
