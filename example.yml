@@ -1,0 +1,67 @@
+instructions:
+  - type: rename port
+    client_pattern: system
+    port_pattern: capture_1
+    new_port_name: capture-1
+  - type: rename port
+    client_pattern: system
+    port_pattern: capture_2
+    new_port_name: capture-2
+  - type: rename port
+    client_pattern: 'system'
+    port_pattern: 'playback_1'
+    new_port_name: 'speakers-left'
+  - type: rename port
+    client_pattern: 'system'
+    port_pattern: 'playback_2'
+    new_port_name: 'speakers-right'
+  - type: rename port
+    client_pattern: 'system'
+    port_pattern: 'playback_3'
+    new_port_name: 'headphones-left'
+  - type: rename port
+    client_pattern: 'system'
+    port_pattern: 'playback_4'
+    new_port_name: 'headphones-right'
+  - type: rename port
+    client_pattern: 'a2j'
+    port_pattern: 'Midi Through.*playback'
+    new_port_name: 'midi-through/midi-in'
+  - type: rename port
+    client_pattern: 'a2j'
+    port_pattern: 'Midi Through.*capture'
+    new_port_name: 'midi-through/midi-out'
+  - type: rename port
+    client_pattern: 'a2j'
+    port_pattern: 'USB-MIDI.*playback'
+    new_port_name: 'kawai-vpc1/midi-in'
+  - type: rename port
+    client_pattern: 'a2j'
+    port_pattern: 'USB-MIDI.*capture'
+    new_port_name: 'kawai-vpc1/midi-out'
+  - type: rename port
+    client_pattern: 'a2j'
+    port_pattern: 'Scarlett 2i4 USB.*playback'
+    new_port_name: 'scarlett-2i4/midi-in'
+  - type: rename port
+    client_pattern: 'a2j'
+    port_pattern: 'Scarlett 2i4 USB.*capture'
+    new_port_name: 'scarlett-2i4/midi-out'
+  - type: rename port
+    client_pattern: 'a2j'
+    port_pattern: 'Launchpad Mini 9.*playback'
+    new_port_name: 'launchpad-mini-9/midi-in'
+  - type: rename port
+    client_pattern: 'a2j'
+    port_pattern: 'Launchpad Mini 9.*capture'
+    new_port_name: 'launchpad-mini-9/midi-out'
+  - type: connect ports
+    client_pattern_1: 'a2j'
+    port_pattern_1: 'kawai-vpc./midi-out'
+    client_pattern_2: 'a2j'
+    port_pattern_2: 'scarlett-.*/midi-in'
+  - type: connect ports
+    client_pattern_1: 'a2j'
+    port_pattern_1: 'scarlett-.*/midi-in'
+    client_pattern_2: 'a2j'
+    port_pattern_2: 'scarlett-.*/midi-out'

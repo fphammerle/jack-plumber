@@ -81,6 +81,12 @@ def _init_argparser():
     import argparse
     argparser = argparse.ArgumentParser(description = None)
     argparser.add_argument(
+            '-c', '--config',
+            metavar = 'path',
+            dest = 'config_path',
+            help = 'path to config file',
+            )
+    argparser.add_argument(
             '--dbus',
             action='store_true',
             help = 'wait for jack server to start / restart via jackdbus',
@@ -124,6 +130,31 @@ def main(argv):
     args = argparser.parse_args(argv)
 
     instructions = {}
+    if args.config_path:
+        import yaml
+        with open(args.config_path) as config_file:
+            config = yaml.load(config_file.read())
+        for instruction in config['instructions']:
+            if instruction['type'] == 'rename port':
+                register_instruction(
+                    instruction['client_pattern'],
+                    instruction['port_pattern'],
+                    PortRenameInstruction(instruction['new_port_name']),
+                    instructions,
+                    )
+            elif instruction['type'] == 'connect ports':
+                register_instruction(
+                    instruction['client_pattern_1'],
+                    instruction['port_pattern_1'],
+                    PortConnectInstruction(instruction['client_pattern_2'], instruction['port_pattern_2']),
+                    instructions,
+                    )
+                register_instruction(
+                    instruction['client_pattern_2'],
+                    instruction['port_pattern_2'],
+                    PortConnectInstruction(instruction['client_pattern_1'], instruction['port_pattern_1']),
+                    instructions,
+                    )
     if args.port_renaming_instructions:
         for renaming_instruction in args.port_renaming_instructions:
             (client_pattern, port_pattern, new_port_name) = renaming_instruction
