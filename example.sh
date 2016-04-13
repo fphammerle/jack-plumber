@@ -16,4 +16,5 @@ jack-plumber \
     --rename-port 'a2j' 'Launchpad Mini 9.*playback' 'launchpad-mini-9/midi-in' \
     --rename-port 'a2j' 'Launchpad Mini 9.*capture' 'launchpad-mini-9/midi-out' \
     --connect-ports 'a2j' 'kawai-vpc./midi-out' 'a2j' 'scarlett-.*/midi-in' \
-    --connect-ports 'a2j' 'scarlett-.*/midi-in' 'a2j' 'scarlett-.*/midi-out' 
+    --connect-ports 'a2j' 'scarlett-.*/midi-in' 'a2j' 'scarlett-.*/midi-out' \
+    --execute-command 'a2j' '.*kawai.*' renamed 'echo renamed kawai'

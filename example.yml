@@ -65,3 +65,11 @@ instructions:
     port_pattern_1: 'scarlett-.*/midi-in'
     client_pattern_2: 'a2j'
     port_pattern_2: 'scarlett-.*/midi-out'
+  - type: execute command
+    client_pattern: 'a2j'
+    port_pattern: 'kawai-vpc1/midi-out'
+    events:
+     - preexisting
+     - registered
+     - renamed
+    command: "jack-smf-recorder \"$HOME/kawai $(date +'%Y-%m-%d %H.%M.%S').mid\" &"

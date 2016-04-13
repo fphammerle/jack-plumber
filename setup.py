@@ -13,6 +13,6 @@ setup(
     keywords = ['audio', 'jack'],
     classifiers = [],
     scripts = glob.glob('scripts/*'),
-    install_requires = ['jacker>=0.3.1'],
+    install_requires = ['jacker>=0.3.1', 'ioex>=0.3'],
     tests_require = ['pytest']
     )

@@ -4,6 +4,7 @@
 import re
 import jack
 import datetime
+import subprocess
 import ioex.shell
 from gi.repository import GLib
 
@@ -61,6 +62,17 @@ class PortConnectInstruction(Instruction):
                 except jack.ConnectionExists:
                     pass
 
+class ExecuteCommandInstruction(Instruction):
+
+    def __init__(self, command, events):
+        self.command = command
+        self.events = events
+
+    def execute(self, client, port, event, date):
+        if event in self.events:
+            log("port '%s' %s: execute command '%s'" % (port.get_name(), event, self.command), ioex.shell.TextColor.yellow)
+            subprocess.call(self.command, shell = True)
+
 def check_port(client, port, event, instructions):
     date = datetime.datetime.now()
     log("port '%s' %s" % (port.get_name(), event))
@@ -80,8 +92,9 @@ def port_renamed(client, port, old_name, new_name, instructions):
 
 def server_shutdown(client, reason, callback):
     print(reason)
+    log("jack client shutdown due to '%s'" % (reason), ioex.shell.TextColor.red)
     if callback:
-        GLib.idle_add(lambda: callback())
+        GLib.idle_add(callback)
 
 def create_client(instructions, server_shutdown_callback = None):
 
@@ -131,6 +144,18 @@ def _init_argparser():
                 'port_name_pattern_2',
                 ),
             )
+    argparser.add_argument(
+            '--execute-command',
+            dest = 'command_execution_instructions',
+            action = 'append',
+            nargs = 4,
+            metavar = ('client_name_pattern', 'port_name_pattern', 'event', 'command'),
+            help = 'possible events: ' + ', '.join([
+                PortEventType.preexisting,
+                PortEventType.registered,
+                PortEventType.renamed,
+                ]),
+            )
     return argparser
 
 def register_instruction(client_pattern, port_pattern, instruction, instructions):
@@ -176,6 +201,15 @@ def main(argv):
                     PortConnectInstruction(instruction['client_pattern_1'], instruction['port_pattern_1']),
                     instructions,
                     )
+            elif instruction['type'] == 'execute command':
+                if not 'events' in instruction:
+                    instruction['events'] = [instruction['event']]
+                register_instruction(
+                    instruction['client_pattern'],
+                    instruction['port_pattern'],
+                    ExecuteCommandInstruction(instruction['command'], instruction['events']),
+                    instructions,
+                    )
     if args.port_renaming_instructions:
         for renaming_instruction in args.port_renaming_instructions:
             (client_pattern, port_pattern, new_port_name) = renaming_instruction
@@ -200,6 +234,15 @@ def main(argv):
                 PortConnectInstruction(client_pattern_1, port_pattern_1),
                 instructions,
                 )
+    if args.command_execution_instructions:
+        for execution_instruction in args.command_execution_instructions:
+            (client_pattern, port_pattern, event, command) = execution_instruction
+            register_instruction(
+                client_pattern,
+                port_pattern,
+                ExecuteCommandInstruction(command, [event]),
+                instructions,
+                )
 
     loop = GLib.MainLoop()
     loop_attr = {'client': None}
@@ -219,10 +262,9 @@ def main(argv):
 
         def shutdown_callback():
             loop_attr['client'] = None
-            print('shutdown')
 
         def jack_started():
-            print('detected start')
+            log("detected start of jack server", ioex.shell.TextColor.green)
             loop_attr['client'] = create_client(instructions, shutdown_callback)
 
         jack_dbus_interface.connect_to_signal('ServerStarted', jack_started)
@@ -237,7 +279,7 @@ def main(argv):
     try:
         loop.run()
     except KeyboardInterrupt:
-        print('keyboard interrupt')
+        log('keyboard interrupt', ioex.shell.TextColor.red)
         pass
 
     return 0
