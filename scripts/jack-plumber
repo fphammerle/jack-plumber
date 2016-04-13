@@ -23,6 +23,7 @@ class PortEventType:
     preexisting = 'preexisting'
     registered = 'registered'
     renamed = 'renamed'
+    unregistered = 'unregistered'
 
 class Instruction(object):
 
@@ -86,6 +87,9 @@ def check_port(client, port, event, instructions):
 def port_registered(client, port, instructions):
     check_port(client, port, PortEventType.registered, instructions)
 
+def port_unregistered(client, port, instructions):
+    check_port(client, port, PortEventType.unregistered, instructions)
+
 def port_renamed(client, port, old_name, new_name, instructions):
     """ Avoid recursion by skipping rename instructions. """
     check_port(client, port, PortEventType.renamed, instructions)
@@ -100,6 +104,7 @@ def create_client(instructions, server_shutdown_callback = None):
 
     jack_client = jack.Client('plumber')
     jack_client.set_port_registered_callback(port_registered, instructions)
+    jack_client.set_port_unregistered_callback(port_unregistered, instructions)
     jack_client.set_port_renamed_callback(port_renamed, instructions)
     if server_shutdown_callback:
         jack_client.set_shutdown_callback(server_shutdown, server_shutdown_callback)
@@ -154,6 +159,7 @@ def _init_argparser():
                 PortEventType.preexisting,
                 PortEventType.registered,
                 PortEventType.renamed,
+                PortEventType.unregistered,
                 ]),
             )
     return argparser
